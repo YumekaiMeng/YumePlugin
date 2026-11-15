@@ -1,30 +1,38 @@
 -- ============================================================
--- Editable list: add, remove, or modify kernel module names here
+-- Editable module list: add, remove, or rename modules here
 -- ============================================================
 local MODULES = {
+    "inte",
     "oplus_secure_guard_new",
 }
 
+-- rmmod candidate paths, tried in order
+local RMMOD_PATHS = {
+    "/system/bin/rmmod",
+    "/system/xbin/rmmod",
+    "/sbin/rmmod",
+    "/vendor/bin/rmmod",
+    "/usr/bin/rmmod",
+}
+
+-- Background re-check interval in seconds (30 minutes)
+local CHECK_INTERVAL = 1800
+
+-- Maximum number of dmesg lines written to the log per action call
+local DMESG_MAX_LINES = 500
+
 -- ============================================================
--- Internal helper functions
+-- Helpers
 -- ============================================================
 local function unload_module(name)
-    -- Try common rmmod paths; exec starts the program directly without a shell
-    local paths = {
-        "/system/bin/rmmod",
-        "/sbin/rmmod",
-        "/usr/bin/rmmod",
-    }
-
-    for _, rmmod in ipairs(paths) do
-        local result = exec(rmmod, name)
-        if result.ok then
+    for _, rmmod in ipairs(RMMOD_PATHS) do
+        local called, result = pcall(exec, rmmod, name)
+        if called and type(result) == "table" and result.ok then
             info(string.format("Unloaded module: %s (via %s)", name, rmmod))
             return true
         end
     end
-
-    warn(string.format("Failed to unload module or module not present: %s", name))
+    warn(string.format("Failed to unload module or not present: %s", name))
     return false
 end
 
@@ -35,45 +43,86 @@ local function unload_all()
 end
 
 -- ============================================================
--- Background daemon callback: runs once every 30 minutes
--- ============================================================
-local function daemon_tick()
-    info("Background check: scanning module list")
-    unload_all()
-    info("Background check: this round finished")
-end
-
--- ============================================================
--- Lifecycle callbacks
+-- Boot callbacks
 -- ============================================================
 
--- Earliest execution stage: unload once immediately during post-fs-data
+-- Earliest stage: unload once at post-fs-data
 local function post_fs_data()
-    info("post_fs_data: running the first module unload round")
+    info("post_fs_data: initial unload round")
     unload_all()
 end
 
--- Service stage: start the background daemon with a 1800-second interval (30 minutes)
+-- Service stage: start the background daemon.
+-- start_daemon's interval is the wait time after each round returns,
+-- so the actual period is CHECK_INTERVAL plus the round's own duration.
 local function service()
-    info("service: starting background daemon task with a 1800-second interval")
-    local ok = start_daemon("daemon_tick", 1800)
-    if not ok then
-        warn("Failed to start background daemon task")
+    info(string.format("service: starting daemon (interval=%ds)", CHECK_INTERVAL))
+    local started = start_daemon("check_modules", CHECK_INTERVAL)
+    if not started then
+        -- Documented: existing same-name daemon, plugin disabled, or
+        -- readiness failure may all cause this. Log and continue.
+        info("service: daemon not started (already running or unavailable)")
     end
 end
 
--- Optional: manually trigger one check through a plugin action
-local function action()
-    info("Manual trigger: running one module unload round")
+-- Daemon body: one finite round, then return so the host can schedule
+-- the next round after CHECK_INTERVAL seconds.
+local function check_modules()
+    info("daemon: periodic check round")
     unload_all()
 end
 
 -- ============================================================
--- The entry point must return a table; callbacks are functions in it
+-- Action button: run "dmesg | grep ksud"
 -- ============================================================
+local function action()
+    info("action: running 'dmesg | grep ksud'")
+
+    -- exec does not go through a shell, so pipes require sh -c.
+    -- The command string is fixed, no user input is concatenated.
+    local called, result = pcall(exec, "/system/bin/sh", "-c", "dmesg | grep ksud")
+    if not called then
+        warn("action: failed to invoke command: " .. tostring(result))
+        return
+    end
+
+    local stdout = result.stdout or ""
+
+    -- Collect non-empty lines
+    local lines = {}
+    for line in stdout:gmatch("[^\n]+") do
+        lines[#lines + 1] = line
+    end
+
+    if #lines > 0 then
+        local shown = math.min(#lines, DMESG_MAX_LINES)
+        for i = 1, shown do
+            info(lines[i])
+        end
+        if #lines > shown then
+            info(string.format(
+                "action: truncated, showing %d of %d lines", shown, #lines))
+        end
+        info(string.format("action: matched %d line(s)", #lines))
+        return
+    end
+
+    -- No stdout. Distinguish grep-no-match from real errors.
+    if result.code == 1 then
+        -- grep exits 1 when no line matched; this is not a failure.
+        info("action: no matching lines")
+    elseif result.ok then
+        info("action: no output")
+    else
+        warn(string.format(
+            "action: command failed (code=%s): %s",
+            tostring(result.code), result.stderr or ""))
+    end
+end
+
 return {
     post_fs_data = post_fs_data,
     service = service,
+    check_modules = check_modules,
     action = action,
-    daemon_tick = daemon_tick,
 }
