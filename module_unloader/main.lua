@@ -73,14 +73,14 @@ local function check_modules()
 end
 
 -- ============================================================
--- Action button: run "dmesg | grep ksud"
+-- Action button: run "dmesg | grep secureguard"
 -- ============================================================
 local function action()
-    info("action: running 'dmesg | grep ksud'")
+    info("action: running 'dmesg | grep secureguard'")
 
     -- exec does not go through a shell, so pipes require sh -c.
     -- The command string is fixed, no user input is concatenated.
-    local called, result = pcall(exec, "/system/bin/sh", "-c", "dmesg | grep ksud")
+    local called, result = pcall(exec, "/system/bin/sh", "-c", "dmesg | grep secureguard")
     if not called then
         warn("action: failed to invoke command: " .. tostring(result))
         return
