@@ -1,9 +1,9 @@
 {
   "id": "module_unloader",
   "name": "Module Unloader",
-  "author": "Yumekai; Deepseek",
-  "version": "1.1.0",
-  "description": "OPPO的oplus_secure_guard_new在未检测到解锁的情况下会反复杀死ksud，本插件将自动卸载MODULES列表里的模块并每30分钟检测一次",
+  "author": "Yumekai",
+  "version": "1.2.0",
+  "description": "自动按照/data/adb/plugins/module_unloader/main.lua中的MODULE列表卸载内核模块（默认配置为卸载OPPO的安全模块解决ksud被频繁杀死问题）",
   "entry": "main.lua",
   "callbacks": ["post_fs_data", "service", "action"],
   "has_action": true
