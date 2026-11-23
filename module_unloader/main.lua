@@ -15,11 +15,8 @@ local RMMOD_PATHS = {
     "/usr/bin/rmmod",
 }
 
--- Background re-check interval in seconds (30 minutes)
-local CHECK_INTERVAL = 1800
-
 -- Maximum number of dmesg lines written to the log per action call
-local DMESG_MAX_LINES = 500
+local DMESG_MAX_LINES = 50
 
 -- ============================================================
 -- Helpers
@@ -49,26 +46,6 @@ end
 -- Earliest stage: unload once at post-fs-data
 local function post_fs_data()
     info("post_fs_data: initial unload round")
-    unload_all()
-end
-
--- Service stage: start the background daemon.
--- start_daemon's interval is the wait time after each round returns,
--- so the actual period is CHECK_INTERVAL plus the round's own duration.
-local function service()
-    info(string.format("service: starting daemon (interval=%ds)", CHECK_INTERVAL))
-    local started = start_daemon("check_modules", CHECK_INTERVAL)
-    if not started then
-        -- Documented: existing same-name daemon, plugin disabled, or
-        -- readiness failure may all cause this. Log and continue.
-        info("service: daemon not started (already running or unavailable)")
-    end
-end
-
--- Daemon body: one finite round, then return so the host can schedule
--- the next round after CHECK_INTERVAL seconds.
-local function check_modules()
-    info("daemon: periodic check round")
     unload_all()
 end
 
@@ -122,7 +99,6 @@ end
 
 return {
     post_fs_data = post_fs_data,
-    service = service,
-    check_modules = check_modules,
     action = action,
 }
+
