@@ -1,4 +1,4 @@
-# Module Unloader
+# YumePlugin README
 - 适用于 LyraVoid 旗下 FinaSU 和 FolkPatch 管理器的插件仓库，针对 Aster ，YukiSU 等兼容 Lua 插件的管理器兼容性仍需测试
 - 已上传至 FinaSU 官方仓库
 
